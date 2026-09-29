@@ -184,61 +184,158 @@ static void write_metadata(const fs::path& path, const std::vector<ShaderEntry>&
 		<< "}\n";
 }
 
-static bool read_metadata(const fs::path& path, std::vector<ShaderEntry>& shaders) {
-	std::ifstream in(path, std::ios::binary);
-	if (!in) return false;
-	std::string content((std::istreambuf_iterator<char>(in)),
-		std::istreambuf_iterator<char>());
+static bool read_metadata(const fs::path& path, std::vector<ShaderEntry>& shaders)
+{
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return false;
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
-	size_t pos = 0;
-	while (true) {
-		size_t name_pos = content.find("\"name\"", pos);
-		if (name_pos == std::string::npos) break;
+    size_t pos = 0;
+    while (true)
+    {
+        size_t name_pos = content.find("\"name\"", pos);
+        if (name_pos == std::string::npos)
+            break;
 
-		auto extract_string = [&](const char* key) -> std::string {
-			size_t k = content.find(key, name_pos);
-			if (k == std::string::npos) return {};
-			size_t q1 = content.find('"', k + std::strlen(key));
-			if (q1 == std::string::npos) return {};
-			size_t q2 = q1 + 1;
-			while (q2 < content.size()) {
-				if (content[q2] == '"' && content[q2 - 1] != '\\') break;
-				++q2;
-			}
-			std::string val = content.substr(q1 + 1, q2 - q1 - 1);
-			// basic unescape
-			std::string un;
-			for (size_t i = 0; i < val.size(); ++i) {
-				if (val[i] == '\\' && i + 1 < val.size()) {
-					switch (val[i + 1]) {
-					case '"':  un += '"';  ++i; break;
-					case '\\': un += '\\'; ++i; break;
-					case 'n':  un += '\n'; ++i; break;
-					case 't':  un += '\t'; ++i; break;
-					case 'r':  un += '\r'; ++i; break;
-					default:   un += val[i];
-					}
-				}
-				else {
-					un += val[i];
-				}
-			}
-			return un;
-			};
+        auto extract_string = [&](const char* key) -> std::string
+        {
+            size_t k = content.find(key, name_pos);
+            if (k == std::string::npos)
+                return {};
+            size_t q1 = content.find('"', k + std::strlen(key));
+            if (q1 == std::string::npos)
+                return {};
+            size_t q2 = q1 + 1;
+            while (q2 < content.size())
+            {
+                if (content[q2] == '"' && (q2 == 0 || content[q2 - 1] != '\\'))
+                    break;
+                // handle escaped quote \"
+                if (content[q2] == '"' && q2 > 0 && content[q2 - 1] == '\\')
+                {
+                    // count consecutive backslashes
+                    size_t bs = 0;
+                    size_t p = q2 - 1;
+                    while (p > q1 && content[p] == '\\')
+                    {
+                        ++bs;
+                        --p;
+                    }
+                    if (bs % 2 == 0)
+                        break; // even number of \ → real quote
+                }
+                ++q2;
+            }
+            std::string val = content.substr(q1 + 1, q2 - q1 - 1);
 
-		ShaderEntry e;
-		e.name = extract_string("\"name\"");
-		e.encoding = extract_string("\"encoding\"");
-		e.vs_file = extract_string("\"vertex_shader_file\"");
-		e.ps_file = extract_string("\"pixel_shader_file\"");
+            // Full JSON string unescape
+            std::string un;
+            un.reserve(val.size());
+            for (size_t i = 0; i < val.size();)
+            {
+                if (val[i] != '\\' || i + 1 >= val.size())
+                {
+                    un += val[i++];
+                    continue;
+                }
 
-		if (!e.name.empty() && !e.vs_file.empty() && !e.ps_file.empty()) {
-			if (e.encoding.empty()) e.encoding = "shift-jis";
-			shaders.push_back(std::move(e));
-		}
-		pos = name_pos + 6;
-	}
-	return !shaders.empty();
+                char esc = val[i + 1];
+                switch (esc)
+                {
+                case '"':
+                    un += '"';
+                    i += 2;
+                    break;
+                case '\\':
+                    un += '\\';
+                    i += 2;
+                    break;
+                case '/':
+                    un += '/';
+                    i += 2;
+                    break;
+                case 'b':
+                    un += '\b';
+                    i += 2;
+                    break;
+                case 'f':
+                    un += '\f';
+                    i += 2;
+                    break;
+                case 'n':
+                    un += '\n';
+                    i += 2;
+                    break;
+                case 'r':
+                    un += '\r';
+                    i += 2;
+                    break;
+                case 't':
+                    un += '\t';
+                    i += 2;
+                    break;
+                case 'u':
+                {
+                    // \uXXXX
+                    if (i + 5 >= val.size())
+                    {
+                        un += val[i++];
+                        continue;
+                    }
+                    unsigned int code = 0;
+                    bool ok = true;
+                    for (int h = 0; h < 4; ++h)
+                    {
+                        char c = val[i + 2 + h];
+                        code <<= 4;
+                        if (c >= '0' && c <= '9')
+                            code |= (c - '0');
+                        else if (c >= 'a' && c <= 'f')
+                            code |= (c - 'a' + 10);
+                        else if (c >= 'A' && c <= 'F')
+                            code |= (c - 'A' + 10);
+                        else
+                        {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if (!ok)
+                    {
+                        un += val[i++];
+                        continue;
+                    }
+
+                    // Shader names only need the low byte (null, ASCII, …)
+                    un += static_cast<char>(code & 0xFF);
+                    i += 6; // skip \uXXXX
+                    break;
+                }
+                default:
+                    // unknown escape → keep the backslash
+                    un += val[i++];
+                    break;
+                }
+            }
+            return un;
+        };
+
+        ShaderEntry e;
+        e.name = extract_string("\"name\"");
+        e.encoding = extract_string("\"encoding\"");
+        e.vs_file = extract_string("\"vertex_shader_file\"");
+        e.ps_file = extract_string("\"pixel_shader_file\"");
+
+        if (!e.name.empty() && !e.vs_file.empty() && !e.ps_file.empty())
+        {
+            if (e.encoding.empty())
+                e.encoding = "shift-jis";
+            shaders.push_back(std::move(e));
+        }
+        pos = name_pos + 6;
+    }
+    return !shaders.empty();
 }
 
 static std::string detect_encoding(const std::string& name) {
@@ -421,8 +518,17 @@ static bool pack(const fs::path& input_dir, fs::path output_file = {}) {
 		fsop_xor(ps_data);
 
 		// Name (ensure null terminator)
-		std::string name = s.name;
-		if (name.empty() || name.back() != '\0') name.push_back('\0');
+        std::string name = s.name;
+        if (name.empty() || name.back() != '\0')
+        {
+            name.push_back('\0');
+        }
+        // (optional safety) make sure we never write a length > 255
+        if (name.size() > 255)
+        {
+            std::cerr << "Warning: name too long, truncating\n";
+            name.resize(255);
+        }
 
 		// Build entry using the documented layout
 		// +0x00  name_length
