@@ -627,14 +627,14 @@ static void usage()
     std::cout << "FOX Engine FSOP Packer/Unpacker\n\n"
                  "Usage:\n"
                  "  Auto mode:  ./fsop_tool <file.fsop or folder>\n"
-                 "              - If .fsop file → unpacks it\n"
-                 "              - If folder    → packs it back to .fsop\n"
+                 "              - If .fsop file -> unpacks it\n"
+                 "              - If folder -> packs it back to .fsop\n"
                  "  Manual:     ./fsop_tool unpack <input.fsop> [output_dir]\n"
                  "  Manual:     ./fsop_tool pack   <input_dir>  [output.fsop]\n\n"
                  "Workflow:\n"
-                 "  1. ./fsop_tool shader.fsop          # → shader_unpacked/\n"
+                 "  1. ./fsop_tool shader.fsop          # -> shader_unpacked/\n"
                  "  2. Edit .fxc files or add new ones\n"
-                 "  3. ./fsop_tool shader_unpacked      # → shader.fsop\n";
+                 "  3. ./fsop_tool shader_unpacked      # -> shader.fsop\n";
 }
 
 int main(int argc, char* argv[])
