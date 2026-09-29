@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="FSOP_TOOL.vcxproj" Id="c4cf8258-1f45-445d-bbdc-1eb4c4e8e7a8" />
+</Solution>
